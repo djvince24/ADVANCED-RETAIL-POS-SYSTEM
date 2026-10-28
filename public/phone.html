@@ -82,13 +82,19 @@
         let ws;
 
         function connectPhoneWS() {
-            const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${proto}//${window.location.host}`);
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}`;
+
+            console.log('[Phone WS] Connecting to:', wsUrl);
+            ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
+                console.log('[Phone WS] Connected successfully!');
                 const badge = document.getElementById('syncBadge');
-                badge.innerText = 'LIVE SYNC';
-                badge.classList.add('online');
+                if (badge) {
+                    badge.innerText = 'LIVE SYNC';
+                    badge.classList.add('online');
+                }
             };
 
             ws.onmessage = (event) => {
@@ -98,10 +104,17 @@
                 }
             };
 
+            ws.onerror = (err) => {
+                console.error('[Phone WS Error]', err);
+            };
+
             ws.onclose = () => {
+                console.log('[Phone WS] Connection closed. Reconnecting in 3s...');
                 const badge = document.getElementById('syncBadge');
-                badge.innerText = 'OFFLINE';
-                badge.classList.remove('online');
+                if (badge) {
+                    badge.innerText = 'DISCONNECTED';
+                    badge.classList.remove('online');
+                }
                 setTimeout(connectPhoneWS, 3000);
             };
         }
