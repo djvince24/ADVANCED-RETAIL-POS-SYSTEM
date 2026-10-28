@@ -38,7 +38,7 @@
         .app-view.active { display: grid; }
         
         #posView { grid-template-columns: 1.5fr 1fr; }
-        #inventoryView, #reportsView, #cashView, #stockTakeView, #crmView, #suppliersView, #settingsView { grid-template-columns: 1fr; overflow-y: auto; }
+        #inventoryView, #emptiesView, #stockTakeView, #crmView, #suppliersView, #cashView, #reportsView, #settingsView, #handoverView { grid-template-columns: 1fr; overflow-y: auto; }
 
         .panel { background: var(--surface); border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); }
         .panel-header { padding: 12px 16px; background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border); font-weight: 600; font-size: 0.9rem; display: flex; justify-content: space-between; align-items: center; }
@@ -105,13 +105,15 @@
         </div>
         <div class="nav-tabs">
             <button class="tab-btn active" onclick="switchTab('pos')">POS Checkout</button>
-            <button class="tab-btn owner-only" onclick="switchTab('inventory')">Inventory</button>
-            <button class="tab-btn owner-only" onclick="switchTab('stockTake')">Stock-Take Audit</button>
+            <button class="tab-btn owner-only" onclick="switchTab('inventory')">Inventory Ledger</button>
+            <button class="tab-btn" onclick="switchTab('empties')">🍾 Empties Audit</button>
+            <button class="tab-btn" onclick="switchTab('handover')">🔄 Shift Handover</button>
+            <button class="tab-btn owner-only" onclick="switchTab('stockTake')">Stock-Take</button>
             <button class="tab-btn" onclick="switchTab('crm')">Customers</button>
             <button class="tab-btn owner-only" onclick="switchTab('suppliers')">Suppliers</button>
             <button class="tab-btn" onclick="switchTab('cash')">Cash & Shift</button>
             <button class="tab-btn owner-only" onclick="switchTab('reports')">Reports</button>
-            <button class="tab-btn owner-only" onclick="switchTab('settings')">Settings & Audit</button>
+            <button class="tab-btn owner-only" onclick="switchTab('settings')">Audit Trail</button>
         </div>
         <div style="display: flex; align-items: center; gap: 10px;">
             <div style="font-size: 0.8rem; color: var(--text-muted);">User: <strong id="activeUserDisplay">Vince</strong></div>
@@ -119,6 +121,7 @@
         </div>
     </header>
 
+    <!-- TAB 1: POS CHECKOUT -->
     <div id="posView" class="app-view active">
         <div class="panel">
             <div class="panel-header">
@@ -189,13 +192,14 @@
         </div>
     </div>
 
+    <!-- TAB 2: INVENTORY LEDGER -->
     <div id="inventoryView" class="app-view">
         <div class="panel">
             <div class="panel-header">
-                <span>Inventory & Catalog Management</span>
+                <span>Inventory Ledger (Opening vs Sold vs Closing)</span>
                 <div style="display: flex; gap: 8px;">
                     <button class="btn" style="width: auto; padding: 6px 12px; margin:0;" onclick="openAddProductModal()">+ Add Product</button>
-                    <button class="btn btn-warning" style="width: auto; padding: 6px 12px; margin:0; color:black;" onclick="importStockCSV()">📥 Bulk CSV Import</button>
+                    <button class="btn btn-warning" style="width: auto; padding: 6px 12px; margin:0; color:black;" onclick="importStockCSV()">📥 Bulk CSV</button>
                 </div>
             </div>
             <div class="panel-body">
@@ -203,12 +207,11 @@
                     <thead>
                         <tr>
                             <th>Product Name</th>
-                            <th>SKU / Barcode</th>
-                            <th>Category</th>
-                            <th>Cost</th>
-                            <th>Price</th>
-                            <th>Stock</th>
-                            <th>Status</th>
+                            <th>SKU</th>
+                            <th>Opening Stock</th>
+                            <th>Sold Units</th>
+                            <th>Closing Stock</th>
+                            <th>Unit Price</th>
                         </tr>
                     </thead>
                     <tbody id="inventoryTableBody"></tbody>
@@ -217,23 +220,67 @@
         </div>
     </div>
 
-    <div id="stockTakeView" class="app-view">
+    <!-- TAB 3: EMPTIES RECONCILIATION -->
+    <div id="emptiesView" class="app-view">
         <div class="panel">
             <div class="panel-header">
-                <span>Physical Stock-Take & Anti-Fraud Shortfall Audit</span>
-                <button class="btn btn-success" style="width: auto; padding: 6px 14px; margin:0;" onclick="exportStockTakeCSV()">📥 Export Stock-Take CSV</button>
+                <span>🍾 Weekend & Shift Empties Reconciliation Audit</span>
+                <button class="btn btn-success" style="width: auto; padding: 6px 12px; margin:0;" onclick="resetEmptiesCycle()">🔄 Reset Cycle</button>
             </div>
             <div class="panel-body">
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                    Tracks physical empty bottle returns against total unit sales to prevent shrinkage and missing bottle losses.
+                </p>
                 <table>
                     <thead>
                         <tr>
                             <th>Product Name</th>
-                            <th>Expected</th>
-                            <th>Counted</th>
-                            <th>Discrepancy</th>
-                            <th>Unit Cost</th>
-                            <th>Loss ($)</th>
+                            <th>Total Units Sold (Expected Empties)</th>
+                            <th>Physical Bottles Counted</th>
+                            <th>Discrepancy / Shortage</th>
                         </tr>
+                    </thead>
+                    <tbody id="emptiesTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 4: SHIFT HANDOVER & TAKEOVER -->
+    <div id="handoverView" class="app-view">
+        <div class="panel" style="max-width: 650px; margin: 0 auto; width: 100%;">
+            <div class="panel-header"><span>🔄 Cashier Shift Handover & Takeover Protocol</span></div>
+            <div class="panel-body">
+                <label style="font-size: 0.75rem; color: var(--text-muted);">Incoming Cashier Taking Over Shift</label>
+                <select id="incomingCashierSelect" class="form-control" style="margin-bottom: 14px;">
+                    <option value="Chipo">Chipo (Bar Lady - Shift A)</option>
+                    <option value="Rudo">Rudo (Bar Lady - Shift B)</option>
+                    <option value="Blessing">Blessing (Cashier)</option>
+                    <option value="Farai">Farai (Barman)</option>
+                    <option value="Vince">Vince (Owner)</option>
+                </select>
+                <div style="max-height: 220px; overflow-y: auto; margin-bottom: 14px;">
+                    <table>
+                        <thead><tr><th>Product</th><th>Closing Stock Transferring to New Shift</th></tr></thead>
+                        <tbody id="handoverTableBody"></tbody>
+                    </table>
+                </div>
+                <button class="btn btn-success" onclick="executeHandover()">Confirm Handover & Transfer Stock Accountability</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB 5: STOCK TAKE -->
+    <div id="stockTakeView" class="app-view">
+        <div class="panel">
+            <div class="panel-header">
+                <span>Physical Stock-Take & Anti-Fraud Audit</span>
+                <button class="btn btn-success" style="width: auto; padding: 6px 14px; margin:0;" onclick="exportStockTakeCSV()">📥 Export CSV</button>
+            </div>
+            <div class="panel-body">
+                <table>
+                    <thead>
+                        <tr><th>Product Name</th><th>Expected</th><th>Counted</th><th>Discrepancy</th><th>Unit Cost</th><th>Loss ($)</th></tr>
                     </thead>
                     <tbody id="stockTakeTableBody"></tbody>
                 </table>
@@ -241,6 +288,7 @@
         </div>
     </div>
 
+    <!-- TAB 6: CUSTOMERS & CRM -->
     <div id="crmView" class="app-view">
         <div class="panel">
             <div class="panel-header">
@@ -249,20 +297,14 @@
             </div>
             <div class="panel-body">
                 <table>
-                    <thead>
-                        <tr>
-                            <th>Customer Name</th>
-                            <th>Phone</th>
-                            <th>Loyalty Points</th>
-                            <th>Outstanding Debt ($)</th>
-                        </tr>
-                    </thead>
+                    <thead><tr><th>Customer Name</th><th>Phone</th><th>Loyalty Points</th><th>Outstanding Debt ($)</th></tr></thead>
                     <tbody id="customerTableBody"></tbody>
                 </table>
             </div>
         </div>
     </div>
 
+    <!-- TAB 7: SUPPLIERS -->
     <div id="suppliersView" class="app-view">
         <div class="panel">
             <div class="panel-header">
@@ -271,20 +313,14 @@
             </div>
             <div class="panel-body">
                 <table>
-                    <thead>
-                        <tr>
-                            <th>Supplier Name</th>
-                            <th>Contact Person</th>
-                            <th>Balance Due ($)</th>
-                            <th>Last Order Date</th>
-                        </tr>
-                    </thead>
+                    <thead><tr><th>Supplier Name</th><th>Contact Person</th><th>Balance Due ($)</th><th>Last Order Date</th></tr></thead>
                     <tbody id="supplierTableBody"></tbody>
                 </table>
             </div>
         </div>
     </div>
 
+    <!-- TAB 8: CASH & SHIFT -->
     <div id="cashView" class="app-view">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div class="panel">
@@ -315,13 +351,14 @@
         </div>
     </div>
 
+    <!-- TAB 9: REPORTS -->
     <div id="reportsView" class="app-view">
         <div class="panel">
             <div class="panel-header">
                 <span>Financial Reports & Analytics</span>
                 <div style="display: flex; gap: 8px;">
                     <button class="btn" style="width: auto; padding: 6px 12px; margin:0;" onclick="exportReportsCSV()">📥 CSV Export</button>
-                    <button class="btn btn-success" style="width: auto; padding: 6px 12px; margin:0;" onclick="printPDFReport()">🖨️ Print PDF Report</button>
+                    <button class="btn btn-success" style="width: auto; padding: 6px 12px; margin:0;" onclick="printPDFReport()">🖨️ Print PDF</button>
                 </div>
             </div>
             <div class="panel-body">
@@ -344,9 +381,7 @@
                     </div>
                 </div>
                 <table>
-                    <thead>
-                        <tr><th>Receipt ID</th><th>Cashier</th><th>Time</th><th>Method</th><th>Total ($)</th></tr>
-                    </thead>
+                    <thead><tr><th>Receipt ID</th><th>Cashier</th><th>Time</th><th>Method</th><th>Total ($)</th></tr></thead>
                     <tbody id="reportsTableBody">
                         <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No sales recorded.</td></tr>
                     </tbody>
@@ -355,22 +390,20 @@
         </div>
     </div>
 
+    <!-- TAB 10: SETTINGS & AUDIT -->
     <div id="settingsView" class="app-view">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
             <div class="panel">
                 <div class="panel-header"><span>Multi-Cashier Account Directory</span></div>
                 <div class="panel-body">
                     <table>
-                        <thead>
-                            <tr><th>Name</th><th>Username</th><th>Role</th></tr>
-                        </thead>
+                        <thead><tr><th>Name</th><th>Username</th><th>Role</th></tr></thead>
                         <tbody>
                             <tr><td>Vince</td><td>vince</td><td><strong>Owner</strong></td></tr>
                             <tr><td>Chipo</td><td>chipo</td><td>Bar Lady (Shift A)</td></tr>
                             <tr><td>Rudo</td><td>rudo</td><td>Bar Lady (Shift B)</td></tr>
                             <tr><td>Blessing</td><td>blessing</td><td>Cashier</td></tr>
                             <tr><td>Farai</td><td>farai</td><td>Barman</td></tr>
-                            <tr><td>Tendai</td><td>tendai</td><td>Supervisor</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -379,9 +412,7 @@
                 <div class="panel-header"><span>Security & Audit Trail Log</span></div>
                 <div class="panel-body" style="max-height: 250px; overflow-y: auto;">
                     <table>
-                        <thead>
-                            <tr><th>User</th><th>Action</th><th>Time</th></tr>
-                        </thead>
+                        <thead><tr><th>User</th><th>Action</th><th>Time</th></tr></thead>
                         <tbody id="auditTableBody">
                             <tr><td>Vince</td><td>System Initialized</td><td>Just now</td></tr>
                         </tbody>
@@ -396,12 +427,12 @@
         let currentUser = { name: "Vince", username: "vince", role: "owner" };
 
         let products = [
-            { id: 1, name: "Castle Lager 375ml", sku: "CAS-375", category: "Bottle Store", cost: 1.20, price: 1.80, stock: 120, countedStock: 120, minStock: 24 },
-            { id: 2, name: "Zambezi Lager Can", sku: "ZAM-CAN", category: "Bar", cost: 1.30, price: 2.00, stock: 15, countedStock: 14, minStock: 20 }
+            { id: 1, name: "Black Label Pints", sku: "BL-PINTS", category: "Bottle Store", cost: 1.50, price: 2.50, openingStock: 50, stock: 50, sold: 0, countedEmpties: 0, countedStock: 50, minStock: 10 },
+            { id: 2, name: "Castle Lager 375ml", sku: "CAS-375", category: "Bottle Store", cost: 1.20, price: 1.80, openingStock: 120, stock: 120, sold: 0, countedEmpties: 0, countedStock: 120, minStock: 24 },
+            { id: 3, name: "Zambezi Lager Can", sku: "ZAM-CAN", category: "Bar", cost: 1.30, price: 2.00, openingStock: 80, stock: 80, sold: 0, countedEmpties: 0, countedStock: 80, minStock: 15 }
         ];
         let customers = [
-            { id: 1, name: "John Moyo", phone: "+263 77 123 4567", points: 45, debt: 0.00 },
-            { id: 2, name: "Tendai Ncube", phone: "+263 71 987 6543", points: 12, debt: 15.50 }
+            { id: 1, name: "John Moyo", phone: "+263 77 123 4567", points: 45, debt: 0.00 }
         ];
         let suppliers = [
             { id: 1, name: "Delta Beverages", contact: "Mr. Khumalo", balance: 450.00, lastOrder: "2026-10-20" }
@@ -444,7 +475,7 @@
                 logAudit(`Logged into terminal`);
                 switchTab('pos');
             } else {
-                alert('Invalid PIN or password. Default PIN is 1234.');
+                alert('Invalid PIN. Default PIN is 1234.');
             }
         }
 
@@ -468,8 +499,9 @@
                 if (data.type === 'INIT_STATE' || data.type === 'STATE_UPDATE') {
                     if(data.state.inventory) products = data.state.inventory;
                     renderProducts(products);
-                    renderInventoryTable();
-                    renderStockTakeTable();
+                    renderInventory();
+                    renderEmptiesTable();
+                    renderHandoverTable();
                 }
             };
 
@@ -493,7 +525,9 @@
             const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.getAttribute('onclick').includes(tabId));
             if(btn) btn.classList.add('active');
 
-            if(tabId === 'inventory') renderInventoryTable();
+            if(tabId === 'inventory') renderInventory();
+            if(tabId === 'empties') renderEmptiesTable();
+            if(tabId === 'handover') renderHandoverTable();
             if(tabId === 'stockTake') renderStockTakeTable();
             if(tabId === 'crm') renderCustomerTable();
             if(tabId === 'suppliers') renderSupplierTable();
@@ -512,7 +546,6 @@
             document.getElementById('productCount').innerText = `${list.length} items`;
             grid.innerHTML = list.map(p => `
                 <div class="product-tile" onclick="addToCart(${p.id})">
-                    ${p.stock <= p.minStock ? `<span class="low-stock-tag">LOW</span>` : ''}
                     <div class="product-name">${p.name}</div>
                     <div class="product-price">$${(p.price).toFixed(2)}</div>
                     <div class="product-stock">Stock: ${p.stock}</div>
@@ -520,21 +553,79 @@
             `).join('');
         }
 
-        function renderInventoryTable() {
+        function renderInventory() {
             const el = document.getElementById('inventoryTableBody');
             if(el) {
                 el.innerHTML = products.map(p => `
                     <tr>
                         <td><strong>${p.name}</strong></td>
                         <td><code>${p.sku}</code></td>
-                        <td>${p.category}</td>
-                        <td>$${p.cost.toFixed(2)}</td>
+                        <td>${p.openingStock}</td>
+                        <td style="color:var(--danger)">-${p.sold || 0}</td>
+                        <td style="color:var(--success)"><strong>${p.stock}</strong></td>
                         <td>$${p.price.toFixed(2)}</td>
-                        <td style="color: ${p.stock <= p.minStock ? 'var(--danger)' : 'inherit'}"><strong>${p.stock}</strong></td>
-                        <td>${p.stock <= p.minStock ? '⚠️ Low' : '✅ Normal'}</td>
                     </tr>
                 `).join('');
             }
+        }
+
+        function renderEmptiesTable() {
+            const el = document.getElementById('emptiesTableBody');
+            if(el) {
+                el.innerHTML = products.map(p => {
+                    const expected = p.sold || 0;
+                    const counted = p.countedEmpties || 0;
+                    const discrepancy = counted - expected;
+                    return `
+                        <tr>
+                            <td><strong>${p.name}</strong></td>
+                            <td style="color:var(--accent); font-weight:bold;">${expected} bottles</td>
+                            <td><input type="number" class="form-control" style="width:90px; padding:4px; margin:0;" value="${counted}" onchange="updateEmptiesCount(${p.id}, this.value)"></td>
+                            <td style="color:${discrepancy < 0 ? 'var(--danger)' : 'var(--success)'}; font-weight:bold;">
+                                ${discrepancy === 0 ? '✅ Balanced' : discrepancy + ' bottles'}
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+        }
+
+        function updateEmptiesCount(id, val) {
+            const p = products.find(prod => prod.id === id);
+            if(p) { p.countedEmpties = parseInt(val) || 0; renderEmptiesTable(); }
+        }
+
+        function resetEmptiesCycle() {
+            if(!confirm("Reset the sold/empties count for a new weekend cycle?")) return;
+            products.forEach(p => { p.sold = 0; p.countedEmpties = 0; });
+            renderEmptiesTable();
+            logAudit("Reset empties cycle");
+        }
+
+        function renderHandoverTable() {
+            const el = document.getElementById('handoverTableBody');
+            if(el) {
+                el.innerHTML = products.map(p => `
+                    <tr><td>${p.name}</td><td><strong>${p.stock} units</strong></td></tr>
+                `).join('');
+            }
+        }
+
+        function executeHandover() {
+            const incoming = document.getElementById('incomingCashierSelect').value;
+            if(!confirm(`Transfer current stock balances to ${incoming}?`)) return;
+
+            products.forEach(p => {
+                p.openingStock = p.stock;
+                p.sold = 0;
+                p.countedEmpties = 0;
+            });
+
+            document.getElementById('activeUserDisplay').innerText = incoming;
+            logAudit(`Shift handed over to ${incoming}`);
+            alert(`Shift successfully handed over to ${incoming}! Opening stock updated to current levels.`);
+            renderInventory();
+            renderEmptiesTable();
         }
 
         function renderStockTakeTable() {
@@ -560,7 +651,7 @@
 
         function updateCount(id, val) {
             const p = products.find(prod => prod.id === id);
-            if(p) { p.countedStock = parseInt(val) || 0; logAudit(`Counted stock adjusted for ${p.name}`); renderStockTakeTable(); }
+            if(p) { p.countedStock = parseInt(val) || 0; logAudit(`Stock-take adjusted for ${p.name}`); renderStockTakeTable(); }
         }
 
         function renderCustomerTable() {
@@ -608,10 +699,7 @@
             renderCart();
         }
 
-        function removeFromCart(id) {
-            cart = cart.filter(i => i.id !== id);
-            renderCart();
-        }
+        function removeFromCart(id) { cart = cart.filter(i => i.id !== id); renderCart(); }
 
         function renderCart() {
             const tbody = document.getElementById('cartTableBody');
@@ -686,15 +774,22 @@
 
             const receiptId = 'TX-' + Math.floor(100000 + Math.random() * 900000);
             let cogs = 0;
+
+            // Deduct stock, increment sold count (empties tracking) & calculate COGS
             cart.forEach(item => {
                 const p = products.find(prod => prod.id === item.id);
-                if(p) { p.stock -= item.quantity; cogs += (p.cost * item.quantity); }
+                if(p) {
+                    p.stock -= item.quantity;
+                    p.sold = (p.sold || 0) + item.quantity;
+                    cogs += (p.cost * item.quantity);
+                }
             });
 
             totalRevenue += total;
             totalCogs += cogs;
             shiftStats.cashSales += cash;
             shiftStats.otherSales += other;
+            document.getElementById('shiftCashSales').innerText = `$${shiftStats.cashSales.toFixed(2)}`;
 
             salesHistory.unshift({ receiptId, cashier: currentUser.name, time: new Date().toLocaleTimeString(), paymentMethod: method, total });
             logAudit(`Completed sale ${receiptId} ($${total.toFixed(2)})`);
@@ -705,9 +800,11 @@
 
             alert(`Sale Successful! Receipt: ${receiptId} (Cashier: ${currentUser.name})`);
             cart = [];
+            document.getElementById('amountTendered').value = '';
             renderCart();
             renderProducts(products);
-            renderInventoryTable();
+            renderInventory();
+            renderEmptiesTable();
         }
 
         function processRefund() {
@@ -782,9 +879,7 @@
             document.body.appendChild(a); a.click(); document.body.removeChild(a);
         }
 
-        function printPDFReport() {
-            window.print();
-        }
+        function printPDFReport() { window.print(); }
 
         function addCustomer() {
             const name = prompt("Customer Name:");
@@ -810,15 +905,14 @@
             const sku = prompt("SKU / Barcode:", "SKU-" + Math.floor(100+Math.random()*900));
             const price = parseFloat(prompt("Selling Price ($):", "2.00")) || 1.00;
             const stock = parseInt(prompt("Opening Stock:", "50")) || 10;
-            products.push({ id: Date.now(), name, sku, category: "General", cost: price * 0.6, price, stock, countedStock: stock, minStock: 10 });
+            products.push({ id: Date.now(), name, sku, category: "General", cost: price * 0.6, price, openingStock: stock, stock, sold: 0, countedEmpties: 0, countedStock: stock, minStock: 10 });
             logAudit(`Added product ${name}`);
             renderProducts(products);
-            renderInventoryTable();
+            renderInventory();
+            renderEmptiesTable();
         }
 
-        function importStockCSV() {
-            alert("CSV Stock bulk import module loaded successfully.");
-        }
+        function importStockCSV() { alert("CSV Stock bulk import module loaded successfully."); }
 
         window.onload = connectWS;
     </script>
