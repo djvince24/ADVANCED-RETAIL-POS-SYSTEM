@@ -1,0 +1,13 @@
+{
+  "name": "rxtx-retail-pos",
+  "version": "1.0.0",
+  "description": "Commercial POS System with Live Boss Phone Sync",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.16.0"
+  }
+}
