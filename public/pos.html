@@ -732,7 +732,7 @@
             const finalTotal = Math.max(0, subtotal - disc);
             document.getElementById('cartSubtotal').innerText = `$${subtotal.toFixed(2)}`;
             document.getElementById('cartTotal').innerText = `$${finalTotal.toFixed(2)}`;
-            document.getElementById('checkoutBtn').disabled = false;
+            
             calculateChange();
         }
 
@@ -740,6 +740,7 @@
             const val = document.getElementById('paymentMethod').value;
             const fields = document.getElementById('splitPaymentFields');
             if(fields) fields.style.display = val === 'SPLIT' ? 'block' : 'none';
+            calculateChange();
         }
 
         function calculateChange() {
@@ -747,10 +748,33 @@
             const disc = parseFloat(document.getElementById('cartDiscount').value) || 0;
             const total = Math.max(0, sub - disc);
             const method = document.getElementById('paymentMethod').value;
-            let tendered = method === 'SPLIT' ? (parseFloat(document.getElementById('splitCashAmount').value) || 0) + (parseFloat(document.getElementById('splitMobileAmount').value) || 0) : parseFloat(document.getElementById('amountTendered').value) || 0;
+            
+            let tendered = 0;
+            let isValid = false;
+
+            if (method === 'SPLIT') {
+                const cashPart = parseFloat(document.getElementById('splitCashAmount').value) || 0;
+                const mobilePart = parseFloat(document.getElementById('splitMobileAmount').value) || 0;
+                tendered = cashPart + mobilePart;
+                isValid = tendered >= total && total > 0;
+            } else if (method === 'DEBT') {
+                isValid = total > 0;
+            } else {
+                tendered = parseFloat(document.getElementById('amountTendered').value) || 0;
+                isValid = tendered >= total && total > 0;
+            }
+
             const change = tendered - total;
-            const el = document.getElementById('changeDue');
-            if(el) el.innerText = change >= 0 ? `$${change.toFixed(2)}` : '$0.00';
+            const changeEl = document.getElementById('changeDue');
+            if(changeEl) {
+                changeEl.innerText = change >= 0 ? `$${change.toFixed(2)}` : '$0.00';
+            }
+
+            // Lock or unlock checkout button based on strict validation
+            const checkoutBtn = document.getElementById('checkoutBtn');
+            if(checkoutBtn) {
+                checkoutBtn.disabled = !isValid || cart.length === 0;
+            }
         }
 
         function parkOrder() {
@@ -780,8 +804,16 @@
             const disc = parseFloat(document.getElementById('cartDiscount').value) || 0;
             const total = Math.max(0, sub - disc);
             const method = document.getElementById('paymentMethod').value;
+
+            let tendered = method === 'SPLIT' ? (parseFloat(document.getElementById('splitCashAmount').value) || 0) + (parseFloat(document.getElementById('splitMobileAmount').value) || 0) : (method === 'DEBT' ? total : parseFloat(document.getElementById('amountTendered').value) || 0);
+
+            if (method !== 'DEBT' && tendered < total) {
+                alert('Error: Amount tendered is less than the total due!');
+                return;
+            }
+
             let cash = method === 'CASH' ? total : (method === 'SPLIT' ? parseFloat(document.getElementById('splitCashAmount').value) || 0 : 0);
-            let other = method !== 'CASH' && method !== 'SPLIT' ? total : (method === 'SPLIT' ? parseFloat(document.getElementById('splitMobileAmount').value) || 0 : 0);
+            let other = method !== 'CASH' && method !== 'SPLIT' && method !== 'DEBT' ? total : (method === 'SPLIT' ? parseFloat(document.getElementById('splitMobileAmount').value) || 0 : 0);
 
             const receiptId = 'TX-' + Math.floor(100000 + Math.random() * 900000);
             let cogs = 0;
@@ -820,6 +852,8 @@
             alert(`Sale Successful! Receipt: ${receiptId} (Cashier: ${currentUser.name})`);
             cart = [];
             document.getElementById('amountTendered').value = '';
+            if(document.getElementById('splitCashAmount')) document.getElementById('splitCashAmount').value = '';
+            if(document.getElementById('splitMobileAmount')) document.getElementById('splitMobileAmount').value = '';
             renderCart();
             renderProducts(products);
             renderInventory();
