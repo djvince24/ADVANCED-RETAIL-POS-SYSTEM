@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RX/TX Enterprise POS - Master Terminal</title>
+    <style>
+        :root {
+            --bg: #070a14;
+            --surface: #111827;
+            --surface-card: #1f2937;
+            --accent: #2563eb;
+            --accent-hover: #1d4ed8;
+            --success: #16a34a;
+            --warning: #d97706;
+            --danger: #dc2626;
+            --text: #f9fafb;
+            --text-muted: #9ca3af;
+            --border: #374151;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+        body { background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        
+        #loginOverlay { position: fixed; inset: 0; background: rgba(7, 10, 20, 0.98); z-index: 9999; display: flex; justify-content: center; align-items: center; }
+        .login-card { background: var(--surface); border: 1px solid var(--border); padding: 30px; border-radius: 12px; width: 360px; box-shadow: 0 10px 25px rgba(0,0,0,0.6); }
+        .login-card h2 { margin-bottom: 20px; font-size: 1.25rem; text-align: center; color: var(--text); }
+
+        header { background: var(--surface); padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
+        .logo { font-size: 1.15rem; font-weight: bold; display: flex; align-items: center; gap: 10px; }
+        .badge { font-size: 0.65rem; padding: 3px 8px; border-radius: 4px; background: var(--danger); font-weight: bold; }
+        .badge.connected { background: var(--success); }
+
+        .nav-tabs { display: flex; background: var(--surface-card); padding: 4px; border-radius: 6px; gap: 4px; overflow-x: auto; }
+        .tab-btn { background: transparent; border: none; color: var(--text-muted); padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 0.75rem; white-space: nowrap; transition: all 0.2s; }
+        .tab-btn.active { background: var(--accent); color: white; }
+
+        .app-view { display: none; flex: 1; overflow: hidden; padding: 16px; gap: 16px; }
+        .app-view.active { display: grid; }
+        
+        #posView { grid-template-columns: 1.5fr 1fr; }
+        #inventoryView, #reportsView, #cashView, #stockTakeView, #crmView, #suppliersView, #settingsView { grid-template-columns: 1fr; overflow-y: auto; }
+
+        .panel { background: var(--surface); border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); }
+        .panel-header { padding: 12px 16px; background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border); font-weight: 600; font-size: 0.9rem; display: flex; justify-content: space-between; align-items: center; }
+        .panel-body { padding: 14px; flex: 1; overflow-y: auto; }
+
+        .search-box { width: 100%; padding: 10px 14px; background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; color: white; margin-bottom: 12px; font-size: 0.9rem; }
+        .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(135px, 1fr)); gap: 10px; }
+        .product-tile { background: var(--surface-card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; text-align: center; cursor: pointer; transition: all 0.15s; position: relative; }
+        .product-tile:hover { border-color: var(--accent); transform: translateY(-2px); }
+        .product-name { font-weight: 600; font-size: 0.85rem; margin-bottom: 4px; }
+        .product-price { color: var(--success); font-weight: bold; font-size: 0.9rem; margin-bottom: 2px; }
+        .product-stock { font-size: 0.75rem; color: var(--text-muted); }
+        .low-stock-tag { position: absolute; top: 4px; right: 4px; background: var(--danger); font-size: 0.55rem; padding: 2px 4px; border-radius: 3px; font-weight: bold; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
+        th { color: var(--text-muted); font-weight: 600; }
+        
+        .cart-summary-box { background: var(--surface-card); padding: 14px; border-radius: 8px; margin-top: auto; border: 1px solid var(--border); }
+        .summary-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 0.9rem; }
+        .summary-row.total { font-size: 1.2rem; font-weight: bold; color: var(--success); border-top: 1px solid var(--border); padding-top: 8px; margin-top: 6px; }
+
+        .form-control { width: 100%; padding: 8px 12px; background: var(--surface-card); border: 1px solid var(--border); border-radius: 6px; color: white; margin-top: 6px; font-size: 0.9rem; }
+        .btn { background: var(--accent); color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; transition: background 0.15s; margin-top: 8px; }
+        .btn:hover { background: var(--accent-hover); }
+        .btn-success { background: var(--success); }
+        .btn-success:hover { background: #15803d; }
+        .btn-danger { background: var(--danger); }
+        .btn-danger:hover { background: #b91c1c; }
+        .btn-warning { background: var(--warning); color: black; }
+    </style>
+</head>
+<body>
+
+    <div id="loginOverlay">
+        <div class="login-card">
+            <h2>🔐 Enterprise POS Sign-In</h2>
+            <label style="font-size:0.75rem; color:var(--text-muted);">Select Account / User Shift</label>
+            <select id="loginUserSelect" class="form-control" style="margin-bottom: 12px;">
+                <option value="vince">Vince (Owner / Admin)</option>
+                <option value="chipo">Chipo (Bar Lady - Shift A)</option>
+                <option value="rudo">Rudo (Bar Lady - Shift B)</option>
+                <option value="blessing">Blessing (Cashier)</option>
+            </select>
+
+            <label style="font-size:0.75rem; color:var(--text-muted);">Secure PIN / Password</label>
+            <input type="password" id="loginPassword" class="form-control" placeholder="Enter PIN" value="1234">
+
+            <button class="btn btn-success" style="margin-top: 20px;" onclick="handleLogin()">Sign In to Terminal</button>
+            <div style="font-size: 0.7rem; color: var(--text-muted); text-align: center; margin-top: 12px;">Default PIN: <strong>1234</strong></div>
+        </div>
+    </div>
+
+    <header>
+        <div class="logo">
+            <span>RX/TX Enterprise POS</span>
+            <span id="connBadge" class="badge">OFFLINE</span>
+        </div>
+        <div class="nav-tabs">
+            <button class="tab-btn active" onclick="switchTab('pos')">POS Checkout</button>
+            <button class="tab-btn owner-only" onclick="switchTab('inventory')">Inventory</button>
+            <button class="tab-btn" onclick="switchTab('cash')">Cash & Shift</button>
+            <button class="tab-btn owner-only" onclick="switchTab('reports')">Reports</button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="font-size: 0.8rem; color: var(--text-muted);">User: <strong id="activeUserDisplay">Vince</strong></div>
+            <button onclick="logout()" style="background:var(--danger); color:white; border:none; padding:4px 8px; border-radius:4px; font-size:0.75rem; cursor:pointer;">Logout</button>
+        </div>
+    </header>
+
+    <div id="posView" class="app-view active">
+        <div class="panel">
+            <div class="panel-header">
+                <span>Product Catalog</span>
+                <span id="productCount" style="font-size: 0.8rem; color: var(--text-muted);">0 items</span>
+            </div>
+            <div class="panel-body">
+                <input type="text" id="searchBar" class="search-box" placeholder="Scan barcode or type name..." oninput="filterProducts()" autofocus>
+                <div id="productGrid" class="product-grid"></div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <span>Active Sale Cart</span>
+                <button onclick="clearCart()" style="background:none; border:none; color: var(--danger); cursor:pointer; font-size:0.8rem;">Clear</button>
+            </div>
+            <div class="panel-body" style="display: flex; flex-direction: column;">
+                <div style="flex: 1; overflow-y: auto; max-height: 180px;">
+                    <table>
+                        <thead>
+                            <tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th><th></th></tr>
+                        </thead>
+                        <tbody id="cartTableBody">
+                            <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Cart is empty</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="cart-summary-box">
+                    <div class="summary-row"><span>Subtotal:</span><span id="cartSubtotal">$0.00</span></div>
+                    <div class="summary-row total"><span>Total Due:</span><span id="cartTotal">$0.00</span></div>
+
+                    <label style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; display: block;">Payment Method</label>
+                    <select id="paymentMethod" class="form-control">
+                        <option value="CASH">Cash (USD)</option>
+                        <option value="ECOCASH">Mobile Money (EcoCash/InnBucks)</option>
+                        <option value="CARD">Bank Card / Swipe</option>
+                    </select>
+
+                    <label style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; display: block;">Amount Tendered ($)</label>
+                    <input type="number" id="amountTendered" class="form-control" placeholder="0.00" oninput="calculateChange()">
+                    
+                    <div class="summary-row" style="margin-top: 8px;"><span>Change Due:</span><span id="changeDue" style="color: var(--success); font-weight: bold;">$0.00</span></div>
+
+                    <button class="btn btn-success" onclick="completeSale()" id="checkoutBtn" disabled style="margin-top:10px;">Complete Sale & Print</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="inventoryView" class="app-view">
+        <div class="panel">
+            <div class="panel-header"><span>Inventory Management</span></div>
+            <div class="panel-body">
+                <table>
+                    <thead>
+                        <tr><th>Product Name</th><th>SKU</th><th>Price</th><th>Stock</th></tr>
+                    </thead>
+                    <tbody id="inventoryTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="cashView" class="app-view">
+        <div class="panel">
+            <div class="panel-header"><span>Cash Drawer Shift Summary</span></div>
+            <div class="panel-body">
+                <div class="summary-row"><span>Opening Float:</span><strong>$50.00</strong></div>
+                <div class="summary-row"><span>Cash Sales Received:</span><span id="shiftCashSales" style="color:var(--success)">$0.00</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="reportsView" class="app-view">
+        <div class="panel">
+            <div class="panel-header"><span>Sales Analytics</span></div>
+            <div class="panel-body">
+                <div class="summary-row"><span>Total Revenue:</span><strong id="repTotalRev" style="color:var(--success)">$0.00</strong></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws;
+        let currentUser = { name: "Vince", role: "owner" };
+        let products = [];
+        let cart = [];
+        let shiftCashSales = 0;
+        let totalRevenue = 0;
+
+        const usersDatabase = {
+            "vince": { name: "Vince", role: "owner", pin: "1234" },
+            "chipo": { name: "Chipo (Bar Lady)", role: "cashier", pin: "1234" },
+            "rudo": { name: "Rudo (Bar Lady)", role: "cashier", pin: "1234" },
+            "blessing": { name: "Blessing", role: "cashier", pin: "1234" }
+        };
+
+        function handleLogin() {
+            const username = document.getElementById('loginUserSelect').value;
+            const pin = document.getElementById('loginPassword').value;
+            if (usersDatabase[username] && usersDatabase[username].pin === pin) {
+                currentUser = usersDatabase[username];
+                document.getElementById('activeUserDisplay').innerText = currentUser.name;
+                document.getElementById('loginOverlay').style.display = 'none';
+                document.querySelectorAll('.owner-only').forEach(el => {
+                    el.style.display = currentUser.role === 'owner' ? 'block' : 'none';
+                });
+                switchTab('pos');
+            } else {
+                alert('Invalid PIN. Use 1234.');
+            }
+        }
+
+        function logout() {
+            document.getElementById('loginOverlay').style.display = 'flex';
+        }
+
+        function connectWS() {
+            const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${proto}//${window.location.host}`);
+            ws.onopen = () => {
+                document.getElementById('connBadge').innerText = 'ONLINE';
+                document.getElementById('connBadge').classList.add('connected');
+            };
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'INIT_STATE' || data.type === 'STATE_UPDATE') {
+                    products = data.state.inventory;
+                    totalRevenue = data.state.totalRevenue;
+                    renderProducts(products);
+                    renderInventory();
+                    document.getElementById('repTotalRev').innerText = `$${totalRevenue.toFixed(2)}`;
+                }
+            };
+            ws.onclose = () => {
+                document.getElementById('connBadge').innerText = 'OFFLINE';
+                document.getElementById('connBadge').classList.remove('connected');
+                setTimeout(connectWS, 3000);
+            };
+        }
+
+        function switchTab(tabId) {
+            if (currentUser.role !== 'owner' && ['inventory', 'reports'].includes(tabId)) {
+                return alert('Access Denied: Owner permission required.');
+            }
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.app-view').forEach(v => v.classList.remove('active'));
+            document.getElementById(tabId + 'View').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function renderProducts(list) {
+            const grid = document.getElementById('productGrid');
+            if(!grid) return;
+            document.getElementById('productCount').innerText = `${list.length} items`;
+            grid.innerHTML = list.map(p => `
+                <div class="product-tile" onclick="addToCart(${p.id})">
+                    <div class="product-name">${p.name}</div>
+                    <div class="product-price">$${p.price.toFixed(2)}</div>
+                    <div class="product-stock">Stock: ${p.stock}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderInventory() {
+            const el = document.getElementById('inventoryTableBody');
+            if(el) {
+                el.innerHTML = products.map(p => `
+                    <tr><td>${p.name}</td><td><code>${p.sku}</code></td><td>$${p.price.toFixed(2)}</td><td>${p.stock}</td></tr>
+                `).join('');
+            }
+        }
+
+        function filterProducts() {
+            const q = document.getElementById('searchBar').value.toLowerCase();
+            renderProducts(products.filter(p => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q)));
+        }
+
+        function addToCart(id) {
+            const p = products.find(prod => prod.id === id);
+            if (!p || p.stock <= 0) return alert('Out of stock!');
+            const existing = cart.find(i => i.id === id);
+            if (existing) {
+                if (existing.quantity + 1 > p.stock) return alert('Exceeds stock!');
+                existing.quantity++;
+            } else {
+                cart.push({ id: p.id, name: p.name, price: p.price, quantity: 1 });
+            }
+            renderCart();
+        }
+
+        function removeFromCart(id) {
+            cart = cart.filter(i => i.id !== id);
+            renderCart();
+        }
+
+        function renderCart() {
+            const tbody = document.getElementById('cartTableBody');
+            if(!tbody) return;
+            if (cart.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">Cart is empty</td></tr>`;
+                document.getElementById('cartSubtotal').innerText = '$0.00';
+                document.getElementById('cartTotal').innerText = '$0.00';
+                document.getElementById('checkoutBtn').disabled = true;
+                return;
+            }
+            let sub = 0;
+            tbody.innerHTML = cart.map(i => {
+                let total = i.price * i.quantity;
+                sub += total;
+                return `<tr><td>${i.name}</td><td>${i.quantity}</td><td>$${i.price.toFixed(2)}</td><td>$${total.toFixed(2)}</td><td><button onclick="removeFromCart(${i.id})" style="color:var(--danger);background:none;border:none;cursor:pointer;">X</button></td></tr>`;
+            }).join('');
+            document.getElementById('cartSubtotal').innerText = `$${sub.toFixed(2)}`;
+            document.getElementById('cartTotal').innerText = `$${sub.toFixed(2)}`;
+            document.getElementById('checkoutBtn').disabled = false;
+            calculateChange();
+        }
+
+        function calculateChange() {
+            const sub = cart.reduce((s, i) => s + (i.price * i.quantity), 0);
+            const tendered = parseFloat(document.getElementById('amountTendered').value) || 0;
+            const change = tendered - sub;
+            document.getElementById('changeDue').innerText = change >= 0 ? `$${change.toFixed(2)}` : '$0.00';
+        }
+
+        function clearCart() { cart = []; renderCart(); }
+
+        function completeSale() {
+            const sub = cart.reduce((s, i) => s + (i.price * i.quantity), 0);
+            const method = document.getElementById('paymentMethod').value;
+            const receiptId = 'TX-' + Math.floor(100000 + Math.random() * 900000);
+
+            if (method === 'CASH') shiftCashSales += sub;
+            document.getElementById('shiftCashSales').innerText = `$${shiftCashSales.toFixed(2)}`;
+
+            ws.send(JSON.stringify({
+                type: 'NEW_SALE',
+                receiptId,
+                cashier: currentUser.name,
+                totalAmount: sub,
+                paymentMethod: method,
+                items: cart,
+                time: new Date().toLocaleTimeString()
+            }));
+
+            alert(`Sale Successful! Receipt: ${receiptId}`);
+            cart = [];
+            document.getElementById('amountTendered').value = '';
+            renderCart();
+        }
+
+        window.onload = connectWS;
+    </script>
+</body>
+</html>
