@@ -51,7 +51,6 @@
         .product-name { font-weight: 600; font-size: 0.85rem; margin-bottom: 4px; }
         .product-price { color: var(--success); font-weight: bold; font-size: 0.9rem; margin-bottom: 2px; }
         .product-stock { font-size: 0.75rem; color: var(--text-muted); }
-        .low-stock-tag { position: absolute; top: 4px; right: 4px; background: var(--danger); font-size: 0.55rem; padding: 2px 4px; border-radius: 3px; font-weight: bold; }
 
         table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
         th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
@@ -68,7 +67,6 @@
         .btn-success:hover { background: #15803d; }
         .btn-danger { background: var(--danger); }
         .btn-danger:hover { background: #b91c1c; }
-        .btn-warning { background: var(--warning); color: black; }
     </style>
 </head>
 <body>
@@ -229,25 +227,44 @@
         }
 
         function connectWS() {
-            const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${proto}//${window.location.host}`);
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}`;
+
+            console.log('[WS] Connecting to:', wsUrl);
+            ws = new WebSocket(wsUrl);
+
             ws.onopen = () => {
-                document.getElementById('connBadge').innerText = 'ONLINE';
-                document.getElementById('connBadge').classList.add('connected');
+                console.log('[WS] Connected successfully!');
+                const badge = document.getElementById('connBadge');
+                if (badge) {
+                    badge.innerText = 'ONLINE';
+                    badge.classList.add('connected');
+                }
             };
+
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 if (data.type === 'INIT_STATE' || data.type === 'STATE_UPDATE') {
-                    products = data.state.inventory;
-                    totalRevenue = data.state.totalRevenue;
+                    products = data.state.inventory || [];
+                    totalRevenue = data.state.totalRevenue || 0;
                     renderProducts(products);
                     renderInventory();
-                    document.getElementById('repTotalRev').innerText = `$${totalRevenue.toFixed(2)}`;
+                    const repRev = document.getElementById('repTotalRev');
+                    if (repRev) repRev.innerText = `$${totalRevenue.toFixed(2)}`;
                 }
             };
+
+            ws.onerror = (err) => {
+                console.error('[WS Error]', err);
+            };
+
             ws.onclose = () => {
-                document.getElementById('connBadge').innerText = 'OFFLINE';
-                document.getElementById('connBadge').classList.remove('connected');
+                console.log('[WS] Connection closed. Reconnecting in 3s...');
+                const badge = document.getElementById('connBadge');
+                if (badge) {
+                    badge.innerText = 'OFFLINE';
+                    badge.classList.remove('connected');
+                }
                 setTimeout(connectWS, 3000);
             };
         }
@@ -259,7 +276,7 @@
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.app-view').forEach(v => v.classList.remove('active'));
             document.getElementById(tabId + 'View').classList.add('active');
-            event.target.classList.add('active');
+            if (event && event.target) event.target.classList.add('active');
         }
 
         function renderProducts(list) {
