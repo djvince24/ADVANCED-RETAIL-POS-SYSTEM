@@ -591,13 +591,18 @@
 
         function updateEmptiesCount(id, val) {
             const p = products.find(prod => prod.id === id);
-            if(p) { p.countedEmpties = parseInt(val) || 0; renderEmptiesTable(); }
+            if(p) { 
+                p.countedEmpties = parseInt(val) || 0; 
+                renderEmptiesTable();
+                syncStateToServer();
+            }
         }
 
         function resetEmptiesCycle() {
             if(!confirm("Reset the sold/empties count for a new weekend cycle?")) return;
             products.forEach(p => { p.sold = 0; p.countedEmpties = 0; });
             renderEmptiesTable();
+            syncStateToServer();
             logAudit("Reset empties cycle");
         }
 
@@ -622,9 +627,16 @@
 
             document.getElementById('activeUserDisplay').innerText = incoming;
             logAudit(`Shift handed over to ${incoming}`);
+            syncStateToServer();
             alert(`Shift successfully handed over to ${incoming}! Opening stock updated to current levels.`);
             renderInventory();
             renderEmptiesTable();
+        }
+
+        function syncStateToServer() {
+            if(ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'UPDATE_EMPTIES', inventory: products }));
+            }
         }
 
         function renderStockTakeTable() {
@@ -774,7 +786,6 @@
             const receiptId = 'TX-' + Math.floor(100000 + Math.random() * 900000);
             let cogs = 0;
 
-            // Deduct stock, increment sold count (empties tracking) & calculate COGS
             cart.forEach(item => {
                 const p = products.find(prod => prod.id === item.id);
                 if(p) {
@@ -794,7 +805,16 @@
             logAudit(`Completed sale ${receiptId} ($${total.toFixed(2)})`);
 
             if(ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'NEW_SALE', receiptId, cashier: currentUser.name, totalAmount: total, paymentMethod: method, items: cart, time: new Date().toLocaleTimeString() }));
+                ws.send(JSON.stringify({ 
+                    type: 'NEW_SALE', 
+                    receiptId, 
+                    cashier: currentUser.name, 
+                    totalAmount: total, 
+                    paymentMethod: method, 
+                    items: cart, 
+                    time: new Date().toLocaleTimeString(),
+                    inventory: products 
+                }));
             }
 
             alert(`Sale Successful! Receipt: ${receiptId} (Cashier: ${currentUser.name})`);
