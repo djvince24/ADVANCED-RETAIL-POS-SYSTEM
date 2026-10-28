@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RX/TX - Boss Phone Dashboard</title>
+    <style>
+        :root {
+            --bg: #090d16;
+            --surface: #131c31;
+            --card: #1e293b;
+            --accent: #3b82f6;
+            --success: #22c55e;
+            --text: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: #334155;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+        body { background: var(--bg); color: var(--text); padding: 14px; padding-bottom: 50px; }
+        
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+        h1 { font-size: 1.15rem; font-weight: bold; }
+        .status-pill { font-size: 0.65rem; padding: 4px 8px; border-radius: 20px; background: #dc2626; font-weight: bold; }
+        .status-pill.online { background: var(--success); }
+
+        .metric-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+        .metric-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+        .metric-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
+        .metric-value { font-size: 1.25rem; font-weight: bold; color: var(--success); }
+
+        .section-title { font-size: 0.95rem; font-weight: 600; margin-bottom: 8px; color: var(--text-muted); }
+        .card { background: var(--card); border-radius: 10px; padding: 14px; margin-bottom: 14px; border: 1px solid var(--border); }
+        
+        table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        th, td { text-align: left; padding: 7px; border-bottom: 1px solid var(--border); }
+        th { color: var(--text-muted); font-weight: 600; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Boss Monitoring</h1>
+        <span id="syncBadge" class="status-pill">DISCONNECTED</span>
+    </header>
+
+    <div class="metric-grid">
+        <div class="metric-card">
+            <div class="metric-label">Total Revenue</div>
+            <div class="metric-value" id="totalRev">$0.00</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Transactions</div>
+            <div class="metric-value" id="txCount" style="color: var(--accent);">0</div>
+        </div>
+    </div>
+
+    <div class="section-title"><span>Live Sales Audit Stream</span></div>
+    <div class="card" style="max-height: 200px; overflow-y: auto;">
+        <table>
+            <thead>
+                <tr><th>Time</th><th>Cashier</th><th>Method</th><th>Total</th></tr>
+            </thead>
+            <tbody id="salesFeed">
+                <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Waiting for live sales...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="section-title"><span>Store Inventory Tracking</span></div>
+    <div class="card">
+        <table>
+            <thead>
+                <tr><th>Product</th><th>Price</th><th>Stock</th></tr>
+            </thead>
+            <tbody id="inventoryTable">
+                <tr><td colspan="3" style="text-align: center; color: var(--text-muted);">Loading inventory...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let ws;
+
+        function connectPhoneWS() {
+            const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${proto}//${window.location.host}`);
+
+            ws.onopen = () => {
+                const badge = document.getElementById('syncBadge');
+                badge.innerText = 'LIVE SYNC';
+                badge.classList.add('online');
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'INIT_STATE' || data.type === 'STATE_UPDATE') {
+                    updateDashboard(data.state);
+                }
+            };
+
+            ws.onclose = () => {
+                const badge = document.getElementById('syncBadge');
+                badge.innerText = 'OFFLINE';
+                badge.classList.remove('online');
+                setTimeout(connectPhoneWS, 3000);
+            };
+        }
+
+        function updateDashboard(state) {
+            document.getElementById('totalRev').innerText = `$${(state.totalRevenue || 0).toFixed(2)}`;
+            document.getElementById('txCount').innerText = state.recentSales ? state.recentSales.length : 0;
+
+            if (state.inventory) {
+                document.getElementById('inventoryTable').innerHTML = state.inventory.map(item => `
+                    <tr><td>${item.name}</td><td>$${item.price.toFixed(2)}</td><td><strong>${item.stock}</strong></td></tr>
+                `).join('');
+            }
+
+            if (state.recentSales && state.recentSales.length > 0) {
+                document.getElementById('salesFeed').innerHTML = state.recentSales.map(sale => `
+                    <tr><td>${sale.time}</td><td>${sale.cashier}</td><td>${sale.paymentMethod}</td><td style="color: var(--success);">$${sale.total.toFixed(2)}</td></tr>
+                `).join('');
+            }
+        }
+
+        window.onload = connectPhoneWS;
+    </script>
+</body>
+</html>
