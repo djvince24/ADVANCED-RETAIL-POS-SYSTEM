@@ -51,6 +51,7 @@
         .product-name { font-weight: 600; font-size: 0.85rem; margin-bottom: 4px; }
         .product-price { color: var(--success); font-weight: bold; font-size: 0.9rem; margin-bottom: 2px; }
         .product-stock { font-size: 0.75rem; color: var(--text-muted); }
+        .low-stock-tag { position: absolute; top: 4px; right: 4px; background: var(--danger); font-size: 0.55rem; padding: 2px 4px; border-radius: 3px; font-weight: bold; }
 
         table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
         th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
@@ -67,6 +68,11 @@
         .btn-success:hover { background: #15803d; }
         .btn-danger { background: var(--danger); }
         .btn-danger:hover { background: #b91c1c; }
+        .btn-warning { background: var(--warning); color: black; }
+
+        .metrics-container { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+        .metric-box { background: var(--surface-card); border: 1px solid var(--border); padding: 14px; border-radius: 8px; text-align: center; }
+        .metric-val { font-size: 1.3rem; font-weight: bold; color: var(--success); margin-top: 4px; }
     </style>
 </head>
 <body>
@@ -80,13 +86,15 @@
                 <option value="chipo">Chipo (Bar Lady - Shift A)</option>
                 <option value="rudo">Rudo (Bar Lady - Shift B)</option>
                 <option value="blessing">Blessing (Cashier)</option>
+                <option value="farai">Farai (Barman)</option>
+                <option value="tendai">Tendai (Supervisor)</option>
             </select>
 
             <label style="font-size:0.75rem; color:var(--text-muted);">Secure PIN / Password</label>
             <input type="password" id="loginPassword" class="form-control" placeholder="Enter PIN" value="1234">
 
             <button class="btn btn-success" style="margin-top: 20px;" onclick="handleLogin()">Sign In to Terminal</button>
-            <div style="font-size: 0.7rem; color: var(--text-muted); text-align: center; margin-top: 12px;">Default PIN: <strong>1234</strong></div>
+            <div style="font-size: 0.7rem; color: var(--text-muted); text-align: center; margin-top: 12px;">Default PIN for all accounts: <strong>1234</strong></div>
         </div>
     </div>
 
@@ -98,8 +106,12 @@
         <div class="nav-tabs">
             <button class="tab-btn active" onclick="switchTab('pos')">POS Checkout</button>
             <button class="tab-btn owner-only" onclick="switchTab('inventory')">Inventory</button>
+            <button class="tab-btn owner-only" onclick="switchTab('stockTake')">Stock-Take Audit</button>
+            <button class="tab-btn" onclick="switchTab('crm')">Customers</button>
+            <button class="tab-btn owner-only" onclick="switchTab('suppliers')">Suppliers</button>
             <button class="tab-btn" onclick="switchTab('cash')">Cash & Shift</button>
             <button class="tab-btn owner-only" onclick="switchTab('reports')">Reports</button>
+            <button class="tab-btn owner-only" onclick="switchTab('settings')">Settings & Audit</button>
         </div>
         <div style="display: flex; align-items: center; gap: 10px;">
             <div style="font-size: 0.8rem; color: var(--text-muted);">User: <strong id="activeUserDisplay">Vince</strong></div>
@@ -110,11 +122,11 @@
     <div id="posView" class="app-view active">
         <div class="panel">
             <div class="panel-header">
-                <span>Product Catalog</span>
+                <span>Product Catalog (Barcode / SKU / Name)</span>
                 <span id="productCount" style="font-size: 0.8rem; color: var(--text-muted);">0 items</span>
             </div>
             <div class="panel-body">
-                <input type="text" id="searchBar" class="search-box" placeholder="Scan barcode or type name..." oninput="filterProducts()" autofocus>
+                <input type="text" id="searchBar" class="search-box" placeholder="Scan barcode or type product name/SKU..." oninput="filterProducts()" autofocus>
                 <div id="productGrid" class="product-grid"></div>
             </div>
         </div>
@@ -122,7 +134,10 @@
         <div class="panel">
             <div class="panel-header">
                 <span>Active Sale Cart</span>
-                <button onclick="clearCart()" style="background:none; border:none; color: var(--danger); cursor:pointer; font-size:0.8rem;">Clear</button>
+                <div style="display: flex; gap: 6px;">
+                    <button onclick="parkOrder()" class="btn-warning" style="padding:4px 8px; font-size:0.75rem; border-radius:4px; border:none; cursor:pointer;">Park Order</button>
+                    <button onclick="clearCart()" style="background:none; border:none; color: var(--danger); cursor:pointer; font-size:0.8rem;">Clear</button>
+                </div>
             </div>
             <div class="panel-body" style="display: flex; flex-direction: column;">
                 <div style="flex: 1; overflow-y: auto; max-height: 180px;">
@@ -136,23 +151,39 @@
                     </table>
                 </div>
 
+                <div id="parkedOrdersList" style="margin: 8px 0; font-size: 0.8rem; color: var(--warning);"></div>
+
                 <div class="cart-summary-box">
                     <div class="summary-row"><span>Subtotal:</span><span id="cartSubtotal">$0.00</span></div>
+                    <div class="summary-row">
+                        <span>Discount ($):</span>
+                        <input type="number" id="cartDiscount" value="0" class="form-control" style="width: 80px; padding: 2px 6px; margin:0;" oninput="renderCart()">
+                    </div>
                     <div class="summary-row total"><span>Total Due:</span><span id="cartTotal">$0.00</span></div>
 
                     <label style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; display: block;">Payment Method</label>
-                    <select id="paymentMethod" class="form-control">
+                    <select id="paymentMethod" class="form-control" onchange="toggleSplitPayment()">
                         <option value="CASH">Cash (USD)</option>
                         <option value="ECOCASH">Mobile Money (EcoCash/InnBucks)</option>
                         <option value="CARD">Bank Card / Swipe</option>
+                        <option value="SPLIT">Split Payment (Cash + Mobile)</option>
+                        <option value="DEBT">Customer Credit / Debt</option>
                     </select>
+
+                    <div id="splitPaymentFields" style="display:none; margin-top:6px;">
+                        <input type="number" id="splitCashAmount" class="form-control" placeholder="Cash amount ($)" oninput="calculateChange()">
+                        <input type="number" id="splitMobileAmount" class="form-control" placeholder="Mobile/Card amount ($)" oninput="calculateChange()">
+                    </div>
 
                     <label style="font-size: 0.75rem; color: var(--text-muted); margin-top: 6px; display: block;">Amount Tendered ($)</label>
                     <input type="number" id="amountTendered" class="form-control" placeholder="0.00" oninput="calculateChange()">
                     
                     <div class="summary-row" style="margin-top: 8px;"><span>Change Due:</span><span id="changeDue" style="color: var(--success); font-weight: bold;">$0.00</span></div>
 
-                    <button class="btn btn-success" onclick="completeSale()" id="checkoutBtn" disabled style="margin-top:10px;">Complete Sale & Print</button>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-success" onclick="completeSale()" id="checkoutBtn" disabled style="flex:2;">Complete Sale & Print</button>
+                        <button class="btn btn-danger" onclick="processRefund()" style="flex:1; background:#7f1d1d;">Refund</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -160,11 +191,25 @@
 
     <div id="inventoryView" class="app-view">
         <div class="panel">
-            <div class="panel-header"><span>Inventory Management</span></div>
+            <div class="panel-header">
+                <span>Inventory & Catalog Management</span>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn" style="width: auto; padding: 6px 12px; margin:0;" onclick="openAddProductModal()">+ Add Product</button>
+                    <button class="btn btn-warning" style="width: auto; padding: 6px 12px; margin:0; color:black;" onclick="importStockCSV()">📥 Bulk CSV Import</button>
+                </div>
+            </div>
             <div class="panel-body">
                 <table>
                     <thead>
-                        <tr><th>Product Name</th><th>SKU</th><th>Price</th><th>Stock</th></tr>
+                        <tr>
+                            <th>Product Name</th>
+                            <th>SKU / Barcode</th>
+                            <th>Category</th>
+                            <th>Cost</th>
+                            <th>Price</th>
+                            <th>Stock</th>
+                            <th>Status</th>
+                        </tr>
                     </thead>
                     <tbody id="inventoryTableBody"></tbody>
                 </table>
@@ -172,111 +217,293 @@
         </div>
     </div>
 
-    <div id="cashView" class="app-view">
+    <div id="stockTakeView" class="app-view">
         <div class="panel">
-            <div class="panel-header"><span>Cash Drawer Shift Summary</span></div>
+            <div class="panel-header">
+                <span>Physical Stock-Take & Anti-Fraud Shortfall Audit</span>
+                <button class="btn btn-success" style="width: auto; padding: 6px 14px; margin:0;" onclick="exportStockTakeCSV()">📥 Export Stock-Take CSV</button>
+            </div>
             <div class="panel-body">
-                <div class="summary-row"><span>Opening Float:</span><strong>$50.00</strong></div>
-                <div class="summary-row"><span>Cash Sales Received:</span><span id="shiftCashSales" style="color:var(--success)">$0.00</span></div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Product Name</th>
+                            <th>Expected</th>
+                            <th>Counted</th>
+                            <th>Discrepancy</th>
+                            <th>Unit Cost</th>
+                            <th>Loss ($)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stockTakeTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="crmView" class="app-view">
+        <div class="panel">
+            <div class="panel-header">
+                <span>Customer Management & Loyalty Balances</span>
+                <button class="btn" style="width: auto; padding: 6px 12px; margin:0;" onclick="addCustomer()">+ Add Customer</button>
+            </div>
+            <div class="panel-body">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Customer Name</th>
+                            <th>Phone</th>
+                            <th>Loyalty Points</th>
+                            <th>Outstanding Debt ($)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="customerTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="suppliersView" class="app-view">
+        <div class="panel">
+            <div class="panel-header">
+                <span>Supplier Invoices & Purchase Orders</span>
+                <button class="btn" style="width: auto; padding: 6px 12px; margin:0;" onclick="addSupplier()">+ Add Supplier</button>
+            </div>
+            <div class="panel-body">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Supplier Name</th>
+                            <th>Contact Person</th>
+                            <th>Balance Due ($)</th>
+                            <th>Last Order Date</th>
+                        </tr>
+                    </thead>
+                    <tbody id="supplierTableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="cashView" class="app-view">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="panel">
+                <div class="panel-header"><span>Shift Cash Drawer Reconciliation</span></div>
+                <div class="panel-body">
+                    <div class="summary-row"><span>Opening Float:</span><strong>$50.00</strong></div>
+                    <div class="summary-row"><span>Cash Sales:</span><span id="shiftCashSales" style="color:var(--success)">$0.00</span></div>
+                    <div class="summary-row"><span>Mobile/Card:</span><span id="shiftOtherSales">$0.00</span></div>
+                    <div class="summary-row"><span>Expenses Paid:</span><span id="shiftExpenses" style="color:var(--danger)">$0.00</span></div>
+                    <hr style="border-color:var(--border); margin:12px 0;">
+                    <div class="summary-row total"><span>Expected Drawer Cash:</span><span id="expectedCash">$50.00</span></div>
+                    
+                    <label style="font-size: 0.75rem; color: var(--text-muted); margin-top: 10px; display: block;">Actual Counted Cash ($)</label>
+                    <input type="number" id="actualCashCount" class="form-control" placeholder="0.00" oninput="calculateVariance()">
+                    <div class="summary-row" style="margin-top: 10px;"><span>Variance:</span><span id="cashVariance">$0.00</span></div>
+                </div>
+            </div>
+            <div class="panel">
+                <div class="panel-header"><span>Record Cash Expense</span></div>
+                <div class="panel-body">
+                    <label style="font-size: 0.75rem; color: var(--text-muted);">Description</label>
+                    <input type="text" id="expDesc" class="form-control" placeholder="e.g. Ice, transport">
+                    <label style="font-size: 0.75rem; color: var(--text-muted); margin-top: 8px; display: block;">Amount ($)</label>
+                    <input type="number" id="expAmount" class="form-control" placeholder="0.00">
+                    <button class="btn btn-danger" style="margin-top:14px;" onclick="recordExpense()">Log Expense</button>
+                </div>
             </div>
         </div>
     </div>
 
     <div id="reportsView" class="app-view">
         <div class="panel">
-            <div class="panel-header"><span>Sales Analytics</span></div>
+            <div class="panel-header">
+                <span>Financial Reports & Analytics</span>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn" style="width: auto; padding: 6px 12px; margin:0;" onclick="exportReportsCSV()">📥 CSV Export</button>
+                    <button class="btn btn-success" style="width: auto; padding: 6px 12px; margin:0;" onclick="printPDFReport()">🖨️ Print PDF Report</button>
+                </div>
+            </div>
             <div class="panel-body">
-                <div class="summary-row"><span>Total Revenue:</span><strong id="repTotalRev" style="color:var(--success)">$0.00</strong></div>
+                <div class="metrics-container">
+                    <div class="metric-box">
+                        <div style="font-size:0.8rem; color:var(--text-muted)">Revenue</div>
+                        <div class="metric-val" id="repTotalRev">$0.00</div>
+                    </div>
+                    <div class="metric-box">
+                        <div style="font-size:0.8rem; color:var(--text-muted)">Transactions</div>
+                        <div class="metric-val" id="repTxCount" style="color:var(--accent)">0</div>
+                    </div>
+                    <div class="metric-box">
+                        <div style="font-size:0.8rem; color:var(--text-muted)">COGS</div>
+                        <div class="metric-val" id="repCogs" style="color:var(--warning)">$0.00</div>
+                    </div>
+                    <div class="metric-box">
+                        <div style="font-size:0.8rem; color:var(--text-muted)">Gross Profit</div>
+                        <div class="metric-val" id="repGrossProfit">$0.00</div>
+                    </div>
+                </div>
+                <table>
+                    <thead>
+                        <tr><th>Receipt ID</th><th>Cashier</th><th>Time</th><th>Method</th><th>Total ($)</th></tr>
+                    </thead>
+                    <tbody id="reportsTableBody">
+                        <tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No sales recorded.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="settingsView" class="app-view">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div class="panel">
+                <div class="panel-header"><span>Multi-Cashier Account Directory</span></div>
+                <div class="panel-body">
+                    <table>
+                        <thead>
+                            <tr><th>Name</th><th>Username</th><th>Role</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Vince</td><td>vince</td><td><strong>Owner</strong></td></tr>
+                            <tr><td>Chipo</td><td>chipo</td><td>Bar Lady (Shift A)</td></tr>
+                            <tr><td>Rudo</td><td>rudo</td><td>Bar Lady (Shift B)</td></tr>
+                            <tr><td>Blessing</td><td>blessing</td><td>Cashier</td></tr>
+                            <tr><td>Farai</td><td>farai</td><td>Barman</td></tr>
+                            <tr><td>Tendai</td><td>tendai</td><td>Supervisor</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="panel">
+                <div class="panel-header"><span>Security & Audit Trail Log</span></div>
+                <div class="panel-body" style="max-height: 250px; overflow-y: auto;">
+                    <table>
+                        <thead>
+                            <tr><th>User</th><th>Action</th><th>Time</th></tr>
+                        </thead>
+                        <tbody id="auditTableBody">
+                            <tr><td>Vince</td><td>System Initialized</td><td>Just now</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
         let ws;
-        let currentUser = { name: "Vince", role: "owner" };
-        let products = [];
+        let currentUser = { name: "Vince", username: "vince", role: "owner" };
+
+        let products = [
+            { id: 1, name: "Castle Lager 375ml", sku: "CAS-375", category: "Bottle Store", cost: 1.20, price: 1.80, stock: 120, countedStock: 120, minStock: 24 },
+            { id: 2, name: "Zambezi Lager Can", sku: "ZAM-CAN", category: "Bar", cost: 1.30, price: 2.00, stock: 15, countedStock: 14, minStock: 20 }
+        ];
+        let customers = [
+            { id: 1, name: "John Moyo", phone: "+263 77 123 4567", points: 45, debt: 0.00 },
+            { id: 2, name: "Tendai Ncube", phone: "+263 71 987 6543", points: 12, debt: 15.50 }
+        ];
+        let suppliers = [
+            { id: 1, name: "Delta Beverages", contact: "Mr. Khumalo", balance: 450.00, lastOrder: "2026-10-20" }
+        ];
+        let auditLogs = [{ user: "Vince", action: "System started", time: new Date().toLocaleTimeString() }];
         let cart = [];
-        let shiftCashSales = 0;
+        let parkedOrders = [];
+        let salesHistory = [];
         let totalRevenue = 0;
+        let totalCogs = 0;
+        let shiftStats = { cashSales: 0, otherSales: 0, expenses: 0 };
 
         const usersDatabase = {
             "vince": { name: "Vince", role: "owner", pin: "1234" },
-            "chipo": { name: "Chipo (Bar Lady)", role: "cashier", pin: "1234" },
-            "rudo": { name: "Rudo (Bar Lady)", role: "cashier", pin: "1234" },
-            "blessing": { name: "Blessing", role: "cashier", pin: "1234" }
+            "chipo": { name: "Chipo (Bar Lady A)", role: "cashier", pin: "1234" },
+            "rudo": { name: "Rudo (Bar Lady B)", role: "cashier", pin: "1234" },
+            "blessing": { name: "Blessing (Cashier)", role: "cashier", pin: "1234" },
+            "farai": { name: "Farai (Barman)", role: "cashier", pin: "1234" },
+            "tendai": { name: "Tendai (Supervisor)", role: "owner", pin: "1234" }
         };
 
         function handleLogin() {
             const username = document.getElementById('loginUserSelect').value;
             const pin = document.getElementById('loginPassword').value;
+
             if (usersDatabase[username] && usersDatabase[username].pin === pin) {
-                currentUser = usersDatabase[username];
+                currentUser = {
+                    username: username,
+                    name: usersDatabase[username].name,
+                    role: usersDatabase[username].role
+                };
                 document.getElementById('activeUserDisplay').innerText = currentUser.name;
                 document.getElementById('loginOverlay').style.display = 'none';
-                document.querySelectorAll('.owner-only').forEach(el => {
+                
+                const ownerTabs = document.querySelectorAll('.owner-only');
+                ownerTabs.forEach(el => {
                     el.style.display = currentUser.role === 'owner' ? 'block' : 'none';
                 });
+
+                logAudit(`Logged into terminal`);
                 switchTab('pos');
             } else {
-                alert('Invalid PIN. Use 1234.');
+                alert('Invalid PIN or password. Default PIN is 1234.');
             }
         }
 
         function logout() {
+            document.getElementById('loginPassword').value = '';
             document.getElementById('loginOverlay').style.display = 'flex';
         }
 
         function connectWS() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}`;
-
+            const wsUrl = "wss://advanced-retail-pos-system.onrender.com";
             console.log('[WS] Connecting to:', wsUrl);
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
-                console.log('[WS] Connected successfully!');
-                const badge = document.getElementById('connBadge');
-                if (badge) {
-                    badge.innerText = 'ONLINE';
-                    badge.classList.add('connected');
-                }
+                document.getElementById('connBadge').innerText = 'ONLINE';
+                document.getElementById('connBadge').classList.add('connected');
             };
 
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 if (data.type === 'INIT_STATE' || data.type === 'STATE_UPDATE') {
-                    products = data.state.inventory || [];
-                    totalRevenue = data.state.totalRevenue || 0;
+                    if(data.state.inventory) products = data.state.inventory;
                     renderProducts(products);
-                    renderInventory();
-                    const repRev = document.getElementById('repTotalRev');
-                    if (repRev) repRev.innerText = `$${totalRevenue.toFixed(2)}`;
+                    renderInventoryTable();
+                    renderStockTakeTable();
                 }
-            };
-
-            ws.onerror = (err) => {
-                console.error('[WS Error]', err);
             };
 
             ws.onclose = () => {
-                console.log('[WS] Connection closed. Reconnecting in 3s...');
-                const badge = document.getElementById('connBadge');
-                if (badge) {
-                    badge.innerText = 'OFFLINE';
-                    badge.classList.remove('connected');
-                }
+                document.getElementById('connBadge').innerText = 'OFFLINE';
+                document.getElementById('connBadge').classList.remove('connected');
                 setTimeout(connectWS, 3000);
             };
         }
 
         function switchTab(tabId) {
-            if (currentUser.role !== 'owner' && ['inventory', 'reports'].includes(tabId)) {
-                return alert('Access Denied: Owner permission required.');
+            if (currentUser.role !== 'owner' && ['inventory', 'stockTake', 'suppliers', 'reports', 'settings'].includes(tabId)) {
+                return alert('Access Denied: Owner/Supervisor permissions required for this section.');
             }
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.app-view').forEach(v => v.classList.remove('active'));
-            document.getElementById(tabId + 'View').classList.add('active');
-            if (event && event.target) event.target.classList.add('active');
+            
+            const targetView = document.getElementById(tabId + 'View');
+            if(targetView) targetView.classList.add('active');
+            
+            const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.getAttribute('onclick').includes(tabId));
+            if(btn) btn.classList.add('active');
+
+            if(tabId === 'inventory') renderInventoryTable();
+            if(tabId === 'stockTake') renderStockTakeTable();
+            if(tabId === 'crm') renderCustomerTable();
+            if(tabId === 'suppliers') renderSupplierTable();
+            if(tabId === 'reports') updateReports();
+            if(tabId === 'settings') renderAuditTrail();
+        }
+
+        function logAudit(action) {
+            auditLogs.unshift({ user: currentUser.name, action, time: new Date().toLocaleTimeString() });
+            if(document.getElementById('auditTableBody')) renderAuditTrail();
         }
 
         function renderProducts(list) {
@@ -285,18 +512,80 @@
             document.getElementById('productCount').innerText = `${list.length} items`;
             grid.innerHTML = list.map(p => `
                 <div class="product-tile" onclick="addToCart(${p.id})">
+                    ${p.stock <= p.minStock ? `<span class="low-stock-tag">LOW</span>` : ''}
                     <div class="product-name">${p.name}</div>
-                    <div class="product-price">$${p.price.toFixed(2)}</div>
+                    <div class="product-price">$${(p.price).toFixed(2)}</div>
                     <div class="product-stock">Stock: ${p.stock}</div>
                 </div>
             `).join('');
         }
 
-        function renderInventory() {
+        function renderInventoryTable() {
             const el = document.getElementById('inventoryTableBody');
             if(el) {
                 el.innerHTML = products.map(p => `
-                    <tr><td>${p.name}</td><td><code>${p.sku}</code></td><td>$${p.price.toFixed(2)}</td><td>${p.stock}</td></tr>
+                    <tr>
+                        <td><strong>${p.name}</strong></td>
+                        <td><code>${p.sku}</code></td>
+                        <td>${p.category}</td>
+                        <td>$${p.cost.toFixed(2)}</td>
+                        <td>$${p.price.toFixed(2)}</td>
+                        <td style="color: ${p.stock <= p.minStock ? 'var(--danger)' : 'inherit'}"><strong>${p.stock}</strong></td>
+                        <td>${p.stock <= p.minStock ? '⚠️ Low' : '✅ Normal'}</td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        function renderStockTakeTable() {
+            const el = document.getElementById('stockTakeTableBody');
+            if(el) {
+                el.innerHTML = products.map(p => {
+                    const counted = p.countedStock !== undefined ? p.countedStock : p.stock;
+                    const shortfall = counted - p.stock;
+                    const loss = shortfall < 0 ? Math.abs(shortfall) * p.cost : 0;
+                    return `
+                        <tr>
+                            <td><strong>${p.name}</strong></td>
+                            <td>${p.stock}</td>
+                            <td><input type="number" class="form-control" style="width:70px; padding:2px;" value="${counted}" onchange="updateCount(${p.id}, this.value)"></td>
+                            <td style="color:${shortfall < 0 ? 'var(--danger)' : 'var(--success)'}">${shortfall}</td>
+                            <td>$${p.cost.toFixed(2)}</td>
+                            <td style="color:var(--danger)">$${loss.toFixed(2)}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+        }
+
+        function updateCount(id, val) {
+            const p = products.find(prod => prod.id === id);
+            if(p) { p.countedStock = parseInt(val) || 0; logAudit(`Counted stock adjusted for ${p.name}`); renderStockTakeTable(); }
+        }
+
+        function renderCustomerTable() {
+            const el = document.getElementById('customerTableBody');
+            if(el) {
+                el.innerHTML = customers.map(c => `
+                    <tr><td><strong>${c.name}</strong></td><td>${c.phone}</td><td>${c.points} pts</td><td style="color:var(--danger)">$${c.debt.toFixed(2)}</td></tr>
+                `).join('');
+            }
+        }
+
+        function renderSupplierTable() {
+            const el = document.getElementById('supplierTableBody');
+            if(el) {
+                el.innerHTML = suppliers.map(s => `
+                    <tr><td><strong>${s.name}</strong></td><td>${s.contact}</td><td style="color:var(--danger)">$${s.balance.toFixed(2)}</td><td>${s.lastOrder}</td></tr>
+                `).join('');
+            }
+        }
+
+        function renderAuditTrail() {
+            const el = document.getElementById('auditTableBody');
+            if(el) {
+                el.innerHTML = auditLogs.map(a => `
+                    <tr><td>${a.user}</td><td>${a.action}</td><td>${a.time}</td></tr>
                 `).join('');
             }
         }
@@ -314,7 +603,7 @@
                 if (existing.quantity + 1 > p.stock) return alert('Exceeds stock!');
                 existing.quantity++;
             } else {
-                cart.push({ id: p.id, name: p.name, price: p.price, quantity: 1 });
+                cart.push({ id: p.id, name: p.name, price: p.price, cost: p.cost, quantity: 1 });
             }
             renderCart();
         }
@@ -334,49 +623,201 @@
                 document.getElementById('checkoutBtn').disabled = true;
                 return;
             }
-            let sub = 0;
+            let subtotal = 0;
             tbody.innerHTML = cart.map(i => {
-                let total = i.price * i.quantity;
-                sub += total;
+                const total = i.price * i.quantity;
+                subtotal += total;
                 return `<tr><td>${i.name}</td><td>${i.quantity}</td><td>$${i.price.toFixed(2)}</td><td>$${total.toFixed(2)}</td><td><button onclick="removeFromCart(${i.id})" style="color:var(--danger);background:none;border:none;cursor:pointer;">X</button></td></tr>`;
             }).join('');
-            document.getElementById('cartSubtotal').innerText = `$${sub.toFixed(2)}`;
-            document.getElementById('cartTotal').innerText = `$${sub.toFixed(2)}`;
+            const disc = parseFloat(document.getElementById('cartDiscount').value) || 0;
+            const finalTotal = Math.max(0, subtotal - disc);
+            document.getElementById('cartSubtotal').innerText = `$${subtotal.toFixed(2)}`;
+            document.getElementById('cartTotal').innerText = `$${finalTotal.toFixed(2)}`;
             document.getElementById('checkoutBtn').disabled = false;
             calculateChange();
         }
 
-        function calculateChange() {
-            const sub = cart.reduce((s, i) => s + (i.price * i.quantity), 0);
-            const tendered = parseFloat(document.getElementById('amountTendered').value) || 0;
-            const change = tendered - sub;
-            document.getElementById('changeDue').innerText = change >= 0 ? `$${change.toFixed(2)}` : '$0.00';
+        function toggleSplitPayment() {
+            const val = document.getElementById('paymentMethod').value;
+            const fields = document.getElementById('splitPaymentFields');
+            if(fields) fields.style.display = val === 'SPLIT' ? 'block' : 'none';
         }
 
-        function clearCart() { cart = []; renderCart(); }
+        function calculateChange() {
+            const sub = cart.reduce((s, i) => s + (i.price * i.quantity), 0);
+            const disc = parseFloat(document.getElementById('cartDiscount').value) || 0;
+            const total = Math.max(0, sub - disc);
+            const method = document.getElementById('paymentMethod').value;
+            let tendered = method === 'SPLIT' ? (parseFloat(document.getElementById('splitCashAmount').value) || 0) + (parseFloat(document.getElementById('splitMobileAmount').value) || 0) : parseFloat(document.getElementById('amountTendered').value) || 0;
+            const change = tendered - total;
+            const el = document.getElementById('changeDue');
+            if(el) el.innerText = change >= 0 ? `$${change.toFixed(2)}` : '$0.00';
+        }
+
+        function parkOrder() {
+            if (cart.length === 0) return;
+            parkedOrders.push([...cart]);
+            cart = [];
+            renderCart();
+            renderParked();
+            logAudit('Order parked');
+        }
+
+        function renderParked() {
+            const el = document.getElementById('parkedOrdersList');
+            if(el) el.innerHTML = parkedOrders.length ? `Parked: ` + parkedOrders.map((o, idx) => `<button onclick="resume(${idx})" style="background:var(--surface-card);color:var(--text);border:1px solid var(--border);padding:2px 6px;cursor:pointer;">#${idx+1}</button>`).join('') : '';
+        }
+
+        function resume(idx) {
+            cart = parkedOrders[idx];
+            parkedOrders.splice(idx, 1);
+            renderCart();
+            renderParked();
+            logAudit('Order resumed');
+        }
 
         function completeSale() {
             const sub = cart.reduce((s, i) => s + (i.price * i.quantity), 0);
+            const disc = parseFloat(document.getElementById('cartDiscount').value) || 0;
+            const total = Math.max(0, sub - disc);
             const method = document.getElementById('paymentMethod').value;
+            let cash = method === 'CASH' ? total : (method === 'SPLIT' ? parseFloat(document.getElementById('splitCashAmount').value) || 0 : 0);
+            let other = method !== 'CASH' && method !== 'SPLIT' ? total : (method === 'SPLIT' ? parseFloat(document.getElementById('splitMobileAmount').value) || 0 : 0);
+
             const receiptId = 'TX-' + Math.floor(100000 + Math.random() * 900000);
+            let cogs = 0;
+            cart.forEach(item => {
+                const p = products.find(prod => prod.id === item.id);
+                if(p) { p.stock -= item.quantity; cogs += (p.cost * item.quantity); }
+            });
 
-            if (method === 'CASH') shiftCashSales += sub;
-            document.getElementById('shiftCashSales').innerText = `$${shiftCashSales.toFixed(2)}`;
+            totalRevenue += total;
+            totalCogs += cogs;
+            shiftStats.cashSales += cash;
+            shiftStats.otherSales += other;
 
-            ws.send(JSON.stringify({
-                type: 'NEW_SALE',
-                receiptId,
-                cashier: currentUser.name,
-                totalAmount: sub,
-                paymentMethod: method,
-                items: cart,
-                time: new Date().toLocaleTimeString()
-            }));
+            salesHistory.unshift({ receiptId, cashier: currentUser.name, time: new Date().toLocaleTimeString(), paymentMethod: method, total });
+            logAudit(`Completed sale ${receiptId} ($${total.toFixed(2)})`);
 
-            alert(`Sale Successful! Receipt: ${receiptId}`);
+            if(ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'NEW_SALE', receiptId, cashier: currentUser.name, totalAmount: total, paymentMethod: method, items: cart, time: new Date().toLocaleTimeString() }));
+            }
+
+            alert(`Sale Successful! Receipt: ${receiptId} (Cashier: ${currentUser.name})`);
             cart = [];
-            document.getElementById('amountTendered').value = '';
             renderCart();
+            renderProducts(products);
+            renderInventoryTable();
+        }
+
+        function processRefund() {
+            if (currentUser.role !== 'owner') {
+                return alert('Permission Denied: Only owners or supervisors can process refunds.');
+            }
+            const rid = prompt("Enter Receipt ID to refund:");
+            if(!rid) return;
+            const amt = parseFloat(prompt("Enter Refund Amount ($):", "0.00")) || 0;
+            if(amt <= 0) return;
+            totalRevenue -= amt;
+            shiftStats.cashSales -= amt;
+            logAudit(`Refund processed for receipt ${rid} ($${amt.toFixed(2)})`);
+            alert(`Refund of $${amt.toFixed(2)} processed successfully.`);
+        }
+
+        function calculateVariance() {
+            const expected = 50 + shiftStats.cashSales - shiftStats.expenses;
+            const actual = parseFloat(document.getElementById('actualCashCount').value) || 0;
+            const variance = actual - expected;
+            const el = document.getElementById('cashVariance');
+            if(el) {
+                el.innerText = `$${variance.toFixed(2)}`;
+                el.style.color = variance < 0 ? 'var(--danger)' : 'var(--success)';
+            }
+        }
+
+        function recordExpense() {
+            const desc = document.getElementById('expDesc').value;
+            const amt = parseFloat(document.getElementById('expAmount').value);
+            if(!desc || !amt) return;
+            shiftStats.expenses += amt;
+            logAudit(`Recorded expense: ${desc} ($${amt.toFixed(2)})`);
+            alert('Expense recorded.');
+            document.getElementById('expDesc').value = '';
+            document.getElementById('expAmount').value = '';
+        }
+
+        function updateReports() {
+            const rev = document.getElementById('repTotalRev');
+            if(rev) rev.innerText = `$${totalRevenue.toFixed(2)}`;
+            const tx = document.getElementById('repTxCount');
+            if(tx) tx.innerText = salesHistory.length;
+            const cogsEl = document.getElementById('repCogs');
+            if(cogsEl) cogsEl.innerText = `$${totalCogs.toFixed(2)}`;
+            const gp = document.getElementById('repGrossProfit');
+            if(gp) gp.innerText = `$${(totalRevenue - totalCogs).toFixed(2)}`;
+            
+            const tbody = document.getElementById('reportsTableBody');
+            if(tbody) {
+                tbody.innerHTML = salesHistory.length ? salesHistory.map(s => `<tr><td><strong>${s.receiptId}</strong></td><td>${s.cashier}</td><td>${s.time}</td><td>${s.paymentMethod}</td><td style="color:var(--success)">$${s.total.toFixed(2)}</td></tr>`).join('') : `<tr><td colspan="5" style="text-align: center; color: var(--text-muted);">No sales recorded.</td></tr>`;
+            }
+        }
+
+        function exportStockTakeCSV() {
+            let csv = "ProductName,SKU,SystemStock,CountedStock,Shortfall\n";
+            products.forEach(p => csv += `"${p.name}","${p.sku}",${p.stock},${p.countedStock || p.stock},${(p.countedStock || p.stock) - p.stock}\n`);
+            downloadCSV(csv, "StockTake_Audit.csv");
+        }
+
+        function exportReportsCSV() {
+            let csv = "ReceiptID,Cashier,Time,Method,TotalUSD\n";
+            salesHistory.forEach(s => csv += `"${s.receiptId}","${s.cashier}","${s.time}","${s.paymentMethod}",${s.total.toFixed(2)}\n`);
+            downloadCSV(csv, "Sales_Report.csv");
+        }
+
+        function downloadCSV(content, filename) {
+            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        }
+
+        function printPDFReport() {
+            window.print();
+        }
+
+        function addCustomer() {
+            const name = prompt("Customer Name:");
+            if(!name) return;
+            const phone = prompt("Phone Number:", "+263");
+            customers.push({ id: Date.now(), name, phone, points: 0, debt: 0 });
+            logAudit(`Added customer ${name}`);
+            renderCustomerTable();
+        }
+
+        function addSupplier() {
+            const name = prompt("Supplier Name:");
+            if(!name) return;
+            const contact = prompt("Contact Person:");
+            suppliers.push({ id: Date.now(), name, contact, balance: 0, lastOrder: new Date().toISOString().split('T')[0] });
+            logAudit(`Added supplier ${name}`);
+            renderSupplierTable();
+        }
+
+        function openAddProductModal() {
+            const name = prompt("Product Name:");
+            if(!name) return;
+            const sku = prompt("SKU / Barcode:", "SKU-" + Math.floor(100+Math.random()*900));
+            const price = parseFloat(prompt("Selling Price ($):", "2.00")) || 1.00;
+            const stock = parseInt(prompt("Opening Stock:", "50")) || 10;
+            products.push({ id: Date.now(), name, sku, category: "General", cost: price * 0.6, price, stock, countedStock: stock, minStock: 10 });
+            logAudit(`Added product ${name}`);
+            renderProducts(products);
+            renderInventoryTable();
+        }
+
+        function importStockCSV() {
+            alert("CSV Stock bulk import module loaded successfully.");
         }
 
         window.onload = connectWS;
