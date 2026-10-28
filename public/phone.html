@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RX/TX - Boss Phone Dashboard</title>
+    <title>RX/TX - Boss Phone Executive Dashboard</title>
     <style>
         :root {
             --bg: #090d16;
@@ -11,6 +11,8 @@
             --card: #1e293b;
             --accent: #3b82f6;
             --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
             --text: #f8fafc;
             --text-muted: #94a3b8;
             --border: #334155;
@@ -28,7 +30,9 @@
         .metric-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
         .metric-value { font-size: 1.25rem; font-weight: bold; color: var(--success); }
 
-        .section-title { font-size: 0.95rem; font-weight: 600; margin-bottom: 8px; color: var(--text-muted); }
+        .alert-banner { background: rgba(239, 68, 68, 0.15); border: 1px solid var(--danger); padding: 10px; border-radius: 8px; margin-bottom: 16px; font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center; }
+        
+        .section-title { font-size: 0.95rem; font-weight: 600; margin-bottom: 8px; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center; }
         .card { background: var(--card); border-radius: 10px; padding: 14px; margin-bottom: 14px; border: 1px solid var(--border); }
         
         table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
@@ -43,6 +47,11 @@
         <span id="syncBadge" class="status-pill">DISCONNECTED</span>
     </header>
 
+    <div id="lowStockAlert" class="alert-banner" style="display:none;">
+        <span>⚠️ <strong>Low Stock Alert:</strong> Items running low.</span>
+        <span id="lowStockCount" style="background:var(--danger); padding:2px 6px; border-radius:4px; font-size:0.7rem;">0</span>
+    </div>
+
     <div class="metric-grid">
         <div class="metric-card">
             <div class="metric-label">Total Revenue</div>
@@ -52,13 +61,26 @@
             <div class="metric-label">Transactions</div>
             <div class="metric-value" id="txCount" style="color: var(--accent);">0</div>
         </div>
+        <div class="metric-card">
+            <div class="metric-label">Cash Revenue</div>
+            <div class="metric-value" id="cashRev" style="color: var(--warning);">$0.00</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Mobile/Card Rev</div>
+            <div class="metric-value" id="otherRev" style="color: var(--accent);">$0.00</div>
+        </div>
     </div>
 
     <div class="section-title"><span>Live Sales Audit Stream</span></div>
     <div class="card" style="max-height: 200px; overflow-y: auto;">
         <table>
             <thead>
-                <tr><th>Time</th><th>Cashier</th><th>Method</th><th>Total</th></tr>
+                <tr>
+                    <th>Time</th>
+                    <th>Cashier</th>
+                    <th>Method</th>
+                    <th>Total</th>
+                </tr>
             </thead>
             <tbody id="salesFeed">
                 <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Waiting for live sales...</td></tr>
@@ -70,7 +92,11 @@
     <div class="card">
         <table>
             <thead>
-                <tr><th>Product</th><th>Price</th><th>Stock</th></tr>
+                <tr>
+                    <th>Product</th>
+                    <th>Price</th>
+                    <th>Stock</th>
+                </tr>
             </thead>
             <tbody id="inventoryTable">
                 <tr><td colspan="3" style="text-align: center; color: var(--text-muted);">Loading inventory...</td></tr>
@@ -82,39 +108,29 @@
         let ws;
 
         function connectPhoneWS() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}`;
-
+            const wsUrl = "wss://advanced-retail-pos-system.onrender.com";
             console.log('[Phone WS] Connecting to:', wsUrl);
             ws = new WebSocket(wsUrl);
 
             ws.onopen = () => {
-                console.log('[Phone WS] Connected successfully!');
                 const badge = document.getElementById('syncBadge');
-                if (badge) {
-                    badge.innerText = 'LIVE SYNC';
-                    badge.classList.add('online');
-                }
+                badge.innerText = 'LIVE SYNC';
+                badge.classList.add('online');
             };
 
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
                 if (data.type === 'INIT_STATE' || data.type === 'STATE_UPDATE') {
                     updateDashboard(data.state);
+                } else if (data.type === 'NEW_SALE' || data.type === 'sale.completed') {
+                    appendSale(data);
                 }
-            };
-
-            ws.onerror = (err) => {
-                console.error('[Phone WS Error]', err);
             };
 
             ws.onclose = () => {
-                console.log('[Phone WS] Connection closed. Reconnecting in 3s...');
                 const badge = document.getElementById('syncBadge');
-                if (badge) {
-                    badge.innerText = 'DISCONNECTED';
-                    badge.classList.remove('online');
-                }
+                badge.innerText = 'OFFLINE';
+                badge.classList.remove('online');
                 setTimeout(connectPhoneWS, 3000);
             };
         }
@@ -123,17 +139,60 @@
             document.getElementById('totalRev').innerText = `$${(state.totalRevenue || 0).toFixed(2)}`;
             document.getElementById('txCount').innerText = state.recentSales ? state.recentSales.length : 0;
 
+            let cashTotal = 0;
+            let otherTotal = 0;
+            if(state.recentSales) {
+                state.recentSales.forEach(s => {
+                    if(s.paymentMethod === 'CASH') cashTotal += (s.total || s.totalAmount || 0);
+                    else otherTotal += (s.total || s.totalAmount || 0);
+                });
+            }
+            document.getElementById('cashRev').innerText = `$${cashTotal.toFixed(2)}`;
+            document.getElementById('otherRev').innerText = `$${otherTotal.toFixed(2)}`;
+
             if (state.inventory) {
-                document.getElementById('inventoryTable').innerHTML = state.inventory.map(item => `
-                    <tr><td>${item.name}</td><td>$${item.price.toFixed(2)}</td><td><strong>${item.stock}</strong></td></tr>
+                const lowStockItems = state.inventory.filter(i => i.stock <= i.minStock);
+                if(lowStockItems.length > 0) {
+                    document.getElementById('lowStockAlert').style.display = 'flex';
+                    document.getElementById('lowStockCount').innerText = lowStockItems.length;
+                }
+
+                const invTable = document.getElementById('inventoryTable');
+                invTable.innerHTML = state.inventory.map(item => `
+                    <tr>
+                        <td>${item.name}</td>
+                        <td>$${item.price.toFixed(2)}</td>
+                        <td style="color: ${item.stock <= item.minStock ? 'var(--danger)' : 'inherit'}"><strong>${item.stock}</strong></td>
+                    </tr>
                 `).join('');
             }
 
+            const feed = document.getElementById('salesFeed');
             if (state.recentSales && state.recentSales.length > 0) {
-                document.getElementById('salesFeed').innerHTML = state.recentSales.map(sale => `
-                    <tr><td>${sale.time}</td><td>${sale.cashier}</td><td>${sale.paymentMethod}</td><td style="color: var(--success);">$${sale.total.toFixed(2)}</td></tr>
+                feed.innerHTML = state.recentSales.map(sale => `
+                    <tr>
+                        <td>${sale.time}</td>
+                        <td>${sale.cashier || 'Vince'}</td>
+                        <td>${sale.paymentMethod || 'CASH'}</td>
+                        <td style="color: var(--success);">$${(sale.total || sale.totalAmount || 0).toFixed(2)}</td>
+                    </tr>
                 `).join('');
             }
+        }
+
+        function appendSale(sale) {
+            const feed = document.getElementById('salesFeed');
+            if (feed.innerHTML.includes('Waiting')) feed.innerHTML = '';
+            
+            const row = `
+                <tr>
+                    <td>${sale.time || new Date().toLocaleTimeString()}</td>
+                    <td>${sale.cashier || 'Staff'}</td>
+                    <td>${sale.paymentMethod || 'CASH'}</td>
+                    <td style="color: var(--success);">$${(sale.totalAmount || sale.total || 0).toFixed(2)}</td>
+                </tr>
+            `;
+            feed.insertAdjacentHTML('afterbegin', row);
         }
 
         window.onload = connectPhoneWS;
